@@ -8,8 +8,8 @@ using namespace std;
 
 //g++ -o main main.cpp -lopencv_core -lopencv_highgui -lopencv_imgcodecs
 
-double lambda=0.03;
-double h = 1.5;
+double lambda=0.3;
+double epsilon = 0.0001;
 double tolX=0.001;
 int maxIter=1;
 
@@ -40,7 +40,8 @@ string type2str(int type) {
 
 
 float Kernel(float x){
-    return exp(-0.5*x);
+    return (0.75f*(1.0f - x*x));
+    //return exp(-0.5*x);
 }
 
 Vec3f KernelFunc(vector<Vec3f> x_vec, int k){
@@ -50,8 +51,11 @@ Vec3f KernelFunc(vector<Vec3f> x_vec, int k){
     for(int i = 0; i < x_vec.size();i++){
         Vec3f diff = x_vec[i] - x_vec[k];
         float length = norm(diff);//sqrt(diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]);
-        float kRes = Kernel(length/(h*h));
-        if(kRes < lambda){
+        if(length > lambda)
+            continue;
+        float kRes = Kernel(length/lambda);
+        //cout << length<< "::::::"<<kRes << endl;
+        if(kRes > epsilon){
             m_x += (kRes * x_vec[i]);
             scale += (kRes);
             count++;
@@ -64,15 +68,15 @@ Vec3f KernelFunc(vector<Vec3f> x_vec, int k){
 }
 
 
-int countInliers(vector<Vec3f> y){
-    int count = 0;
-    for(int k = 0; k < y.size();k++){
-          if(norm(y[k]) < lambda){
-              count++;
-          }
-    }
-    return count;
-}
+//int countInliers(vector<Vec3f> y){
+//    int count = 0;
+//    for(int k = 0; k < y.size();k++){
+//          if(norm(y[k]) < lambda){
+//              count++;
+//          }
+//    }
+//    return count;
+//}
 
 //Mat meanshiftFunc2(Mat img){
 
@@ -137,19 +141,35 @@ Mat meanshiftFunc(Mat img){
     img.convertTo(img,CV_32F);
     cout << type2str(img.type())<<endl;
     vector<Vec3f> x_vec;
+    float max =0.0;
     for(int y_Coord = 0; y_Coord < img.cols;y_Coord++){
         for(int x_Coord = 0; x_Coord < img.rows;x_Coord++){
             Point3f feature = Vec3f(x_Coord,y_Coord,img.at<float>(x_Coord,y_Coord));
             x_vec.push_back(feature);
+            if(feature.z > max){
+                max = feature.z;
+            }
         }
     }
+
+    vector<Vec3f> y_vec = x_vec;
+
+    for(int k = 0; k < x_vec.size();k++){
+        x_vec[k][0] /= (float)img.rows;
+        x_vec[k][1] /= (float)img.cols;
+        x_vec[k][2] /= max;
+
+        y_vec[k][2] /= max;
+    }
+
+
 
 
     for(int iter = 0; iter < maxIter; iter++){
         for(int k = 0; k < x_vec.size();k++){
             Vec3f m_x = KernelFunc(x_vec,k);
             Vec3f meanShift = m_x - x_vec[k];
-            x_vec[k][2] += meanShift[2];
+            y_vec[k][2] += meanShift[2];
             if(0 == k % (x_vec.size() / 10)){
                 cout << endl;
                 cout << (int)((10*k) / (x_vec.size() / 10) ) <<"%";
@@ -161,6 +181,13 @@ Mat meanshiftFunc(Mat img){
         }
     }
     //cout << endl;
+
+    for(int k = 0; k < x_vec.size();k++){
+        x_vec[k][0] = y_vec[k][0];
+        x_vec[k][1] = y_vec[k][1];
+        x_vec[k][2] = round(y_vec[k][2] * max);
+    }
+
     Mat imgOut = Mat(img.rows, img.cols, CV_32F);
 
     for(int i = 0; i < x_vec.size();i++){
@@ -190,7 +217,7 @@ int main(int argc, char *argv[])
 
     namedWindow("Display window1", WINDOW_AUTOSIZE);
     imshow("Display window1", meanShiftImage );
-    imwrite( "../cameraman_noisy_denoised.png", meanShiftImage);
+    imwrite( "../cameraman_denoised.png", meanShiftImage);
 
     waitKey(0);                                          // Wait for a keystroke in the window
     return 0;
