@@ -53,7 +53,7 @@ Vec3f KernelFunc(vector<Vec3f> x_vec, int k){
         float length = norm(diff);//sqrt(diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]);
         if(length > lambda)
             continue;
-        float kRes = Kernel(length/lambda);
+        float kRes = Kernel((length*length)/(lambda * lambda));
         //cout << length<< "::::::"<<kRes << endl;
         if(kRes > epsilon){
             m_x += (kRes * x_vec[i]);
@@ -179,6 +179,9 @@ Mat meanshiftFunc(Mat img){
                 cout << flush;
             }
         }
+		for (int k = 0; k < x_vec.size(); k++){
+			x_vec[k][2] = y_vec[k][2];
+		}
     }
     //cout << endl;
 
