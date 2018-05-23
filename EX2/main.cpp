@@ -4,8 +4,6 @@
 #include <iostream>
 #include <map>
 
-
-
 using namespace cv;
 using namespace std;
 
@@ -22,7 +20,7 @@ double findMaxL2(Mat &matrix);
 // second parameter: desired # of dimensions ( here: 2)
 Mat reducePCA(Mat &dataMatrix, unsigned int dim);
 Mat reduceIsomap(Mat &dataMatrix, unsigned int dim);
-Mat reduceLLE(Mat &dataMatrix, unsigned int dim);
+
 
 int main(int argc, char** argv)
 {
@@ -39,7 +37,7 @@ int main(int argc, char** argv)
 		{
 			dataMatrix.at<double>(i*nSamplesJ+j,0) = (i/(double)nSamplesI * 2.0 * 3.14 + 3.14) * cos(i/(double)nSamplesI * 2.0 * 3.14) + (rand() % 100)/noiseScaling;
 			dataMatrix.at<double>(i*nSamplesJ+j,1) = (i/(double)nSamplesI * 2.0 * 3.14 + 3.14) * sin(i/(double)nSamplesI * 2.0 * 3.14) + (rand() % 100)/noiseScaling;
-                        dataMatrix.at<double>(i*nSamplesJ+j,2) = 10.0*j/(double)nSamplesJ + (rand() % 100)/noiseScaling;
+            dataMatrix.at<double>(i*nSamplesJ+j,2) = 10.0*j/(double)nSamplesJ + (rand() % 100)/noiseScaling;
 		}
 	}
 	
@@ -56,8 +54,9 @@ int main(int argc, char** argv)
         Draw2DManifold(dataPCA,"PCA",nSamplesI,nSamplesJ);
 
 	// Isomap
-	//Mat dataIsomap = reduceIsomap(dataMatrix,2);
-	//Draw2DManifold(dataIsomap,"ISOMAP",nSamplesI,nSamplesJ);
+	Mat dataIsomap = reduceIsomap(dataMatrix,2);
+	dataIsomap = dataIsomap / 10;
+	Draw2DManifold(dataIsomap,"ISOMAP",nSamplesI,nSamplesJ);
 	
 	waitKey(0);
 
@@ -71,13 +70,16 @@ Mat reducePCA(Mat &dataMatrix, unsigned int dim)
         Mat meanVec;
         reduce (dataMatrix,meanVec,0,CV_REDUCE_AVG);
         // 1. Compute Covariance Matrix of transformed mean vectors
-	Mat Cov = ComputeCovarianc(dataMatrix, meanVec);
-	// 2. Compute the 2 eigenvectors of the covariance matrix belong into the largest eigenvalues.
+        Mat Cov = ComputeCovarianc(dataMatrix, meanVec);
+        // 2. Compute the 2 eigenvectors of the covariance matrix belong into the largest eigenvalues.
         Mat U, S, vT;
         SVD::compute(Cov, S, U, vT);
-        Mat reduced = U.rowRange(0,2);
+        cout << U.rows << ".."<<  U.cols << endl;
+        Mat reduced = U.rowRange(0,dim);
         Mat reducedT;
         transpose(reduced, reducedT);
+        cout << reduced.rows << ".."<<  reduced.cols << endl;
+		cout << dataMatrix.rows << ".."<<  dataMatrix.cols << endl;
         return dataMatrix * reducedT;
 }
 
@@ -85,19 +87,17 @@ Mat reducePCA(Mat &dataMatrix, unsigned int dim)
 Mat ComputeCovarianc(Mat &matrix, Mat mean)
 {
 	Mat Cov = Mat();
-        const int nElem = matrix.rows;
-        const int dim = matrix.cols;
+	const int nElem = matrix.rows;
+	const int dim = matrix.cols;
 	Mat sum = Mat::zeros(3, 3, CV_64F);
-        for (int i = 0; i < nElem; i++)
-	{
-                Mat x_i = matrix.row(i)-mean;
-                Mat x_i_t;
-                transpose (x_i, x_i_t);
-                Mat cov_i = x_i_t * x_i;
-                sum += cov_i;
+	for (int i = 0; i < nElem; i++){
+		Mat x_i = matrix.row(i)-mean;
+		Mat x_i_t;
+		transpose (x_i, x_i_t);
+		Mat cov_i = x_i_t * x_i;
+		sum += cov_i;
 	}
-
-        return sum/nElem;
+	return sum/nElem;
 }
 
 
@@ -118,9 +118,98 @@ double findMaxL2(Mat &matrix){
     return max;
 }
 
+
+map<double, int> KNN(Mat &dataMatrix, int index, int K){
+	K = K + 1; //Add itself to KNN list
+	int nElem = dataMatrix.rows;
+	map<double, int> distanceMap;
+	Mat x = dataMatrix.row(index);
+	for(int i = 0; i < nElem;i++){
+		Mat x_i = dataMatrix.row(i);
+		Mat diff = x-x_i;
+		Mat diff_t;
+		transpose (diff, diff_t);
+		Mat scalar = diff * diff_t;
+		double distance = sqrt(scalar.at<double>(0,0));
+		distanceMap.insert(pair<double, int>(distance,i));
+	}
+	map<double, int> ret;
+	int k = 0;
+	for (auto iter = distanceMap.begin(); k < K; k++, iter++){
+	    ret.insert(pair<double, int>(iter->first,iter->second));
+	}
+	//cout << ret.size() << endl;
+	return ret;
+}
+
+Mat floydWarshall (Mat &distanceMap){
+	int nElem = distanceMap.rows;
+
+	//for(int iter = 0; iter < 5 ; iter++){
+		for (int k = 0; k < nElem; k++){
+			for (int i = 0; i < nElem; i++){
+				for (int j = 0; j < nElem; j++){
+					double shortCut = distanceMap.at<double>(i,k) + distanceMap.at<double>(k,j);
+					if (shortCut < distanceMap.at<double>(i,j)){
+						distanceMap.at<double>(i,j) = shortCut;
+						distanceMap.at<double>(j,i) = shortCut;
+					}
+				}
+			}
+		}
+	//}
+    return distanceMap;
+}
+
 Mat reduceIsomap(Mat &dataMatrix, unsigned int dim)
 {
-	return dataMatrix;
+	int K = 10;
+	int nElem = dataMatrix.rows;
+
+	Mat distanceMap = Mat::ones(nElem, nElem, CV_64F) * 10000;
+	for(int i = 0; i < nElem; i++){
+		map<double, int> kNNResult = KNN(dataMatrix,i,K);
+		int k = 0;
+		for (auto iter = kNNResult.begin(); k < K + 1; k++, iter++){ //K+1 because kNN contains node itself
+			distanceMap.at<double>(i, iter->second) = iter->first;
+		}
+	}
+	//cout << distanceMap << endl;
+	distanceMap = floydWarshall(distanceMap);
+	//cout << distanceMap << endl;
+	Mat meanVec;
+	reduce(dataMatrix,meanVec,0,CV_REDUCE_AVG);
+	cout << meanVec << endl;
+	cout << endl;
+	//cout << dataMatrix << endl;
+	for(int i = 0 ; i < nElem ; i++){
+		dataMatrix.row(i) -= meanVec;
+	}
+	//cout << endl;
+	//cout << dataMatrix << endl;
+	Mat meanVec2;
+	reduce(dataMatrix,meanVec2,0,CV_REDUCE_AVG);
+	cout << meanVec2 << endl;
+
+    Mat U, S, vT;
+    SVD::compute(distanceMap, S, U, vT);
+    cout << S.rows << "x"<<  S.cols << endl;
+    cout << U.rows << "x"<<  U.cols << endl;
+    cout << vT.rows << "x"<<  vT.cols << endl;
+    Mat reduced = Mat(dim,3,CV_64F);//.rowRange(0,dim);
+    reduced.at<double>(0,0) = U.at<double>(0,0);
+    reduced.at<double>(0,1) = U.at<double>(0,1);
+    reduced.at<double>(0,2) = U.at<double>(0,2);
+    reduced.at<double>(1,0) = U.at<double>(1,0);
+    reduced.at<double>(1,1) = U.at<double>(1,1);
+    reduced.at<double>(1,2) = U.at<double>(1,2);
+	Mat reducedT;
+	transpose(reduced, reducedT);
+	//cout << reduced.rows << ".."<<  reduced.cols << endl;
+	cout << reducedT << endl;
+	//cout << dataMatrix.rows << ".."<<  dataMatrix.cols << endl;
+	return dataMatrix * reducedT;
+	//return dataMatrix;
 }
 
 void Draw3DManifold(Mat &dataMatrix, char const * name, int nSamplesI, int nSamplesJ)
