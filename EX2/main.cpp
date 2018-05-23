@@ -55,8 +55,7 @@ int main(int argc, char** argv)
 
 	// Isomap
 	Mat dataIsomap = reduceIsomap(dataMatrix,2);
-	dataIsomap = dataIsomap / 10;
-	Draw2DManifold(dataIsomap,"ISOMAP",nSamplesI,nSamplesJ);
+	Draw2DManifold(dataIsomap, "ISOMAP",nSamplesI,nSamplesJ);
 	
 	waitKey(0);
 
@@ -166,6 +165,13 @@ Mat reduceIsomap(Mat &dataMatrix, unsigned int dim)
 	int K = 10;
 	int nElem = dataMatrix.rows;
 
+	Mat meanVec;
+	reduce(dataMatrix,meanVec,0,CV_REDUCE_AVG);
+	for(int i = 0 ; i < nElem ; i++){
+		dataMatrix.row(i) -= meanVec;
+	}
+
+
 	Mat distanceMap = Mat::ones(nElem, nElem, CV_64F) * 10000;
 	for(int i = 0; i < nElem; i++){
 		map<double, int> kNNResult = KNN(dataMatrix,i,K);
@@ -174,42 +180,22 @@ Mat reduceIsomap(Mat &dataMatrix, unsigned int dim)
 			distanceMap.at<double>(i, iter->second) = iter->first;
 		}
 	}
-	//cout << distanceMap << endl;
-	distanceMap = floydWarshall(distanceMap);
-	//cout << distanceMap << endl;
-	Mat meanVec;
-	reduce(dataMatrix,meanVec,0,CV_REDUCE_AVG);
-	cout << meanVec << endl;
-	cout << endl;
-	//cout << dataMatrix << endl;
-	for(int i = 0 ; i < nElem ; i++){
-		dataMatrix.row(i) -= meanVec;
-	}
-	//cout << endl;
-	//cout << dataMatrix << endl;
-	Mat meanVec2;
-	reduce(dataMatrix,meanVec2,0,CV_REDUCE_AVG);
-	cout << meanVec2 << endl;
 
+
+	distanceMap = floydWarshall(distanceMap);
+	Mat D = distanceMap.mul(distanceMap);
+	Mat C = Mat::eye(nElem,nElem,CV_64F);
+	C -= (Mat::ones(nElem,nElem,CV_64F) * 1.0/nElem);
+
+	Mat SVDInput= -0.5 * C * D * C; //X^T * X
     Mat U, S, vT;
-    SVD::compute(distanceMap, S, U, vT);
-    cout << S.rows << "x"<<  S.cols << endl;
-    cout << U.rows << "x"<<  U.cols << endl;
-    cout << vT.rows << "x"<<  vT.cols << endl;
-    Mat reduced = Mat(dim,3,CV_64F);//.rowRange(0,dim);
-    reduced.at<double>(0,0) = U.at<double>(0,0);
-    reduced.at<double>(0,1) = U.at<double>(0,1);
-    reduced.at<double>(0,2) = U.at<double>(0,2);
-    reduced.at<double>(1,0) = U.at<double>(1,0);
-    reduced.at<double>(1,1) = U.at<double>(1,1);
-    reduced.at<double>(1,2) = U.at<double>(1,2);
-	Mat reducedT;
-	transpose(reduced, reducedT);
-	//cout << reduced.rows << ".."<<  reduced.cols << endl;
-	cout << reducedT << endl;
-	//cout << dataMatrix.rows << ".."<<  dataMatrix.cols << endl;
-	return dataMatrix * reducedT;
-	//return dataMatrix;
+    SVD::compute(SVDInput, S, U, vT);
+
+    //Mat reduced = vT.rowRange(0,dim);
+	//Mat reducedT;
+	//transpose(reduced, reducedT);
+
+	return U.colRange(0,dim);
 }
 
 void Draw3DManifold(Mat &dataMatrix, char const * name, int nSamplesI, int nSamplesJ)
