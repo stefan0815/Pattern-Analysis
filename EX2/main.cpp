@@ -73,13 +73,7 @@ Mat reducePCA(Mat &dataMatrix, unsigned int dim)
         // 2. Compute the 2 eigenvectors of the covariance matrix belong into the largest eigenvalues.
         Mat U, S, vT;
         SVD::compute(Cov, S, U, vT);
-        cout << U.rows << ".."<<  U.cols << endl;
-        Mat reduced = U.rowRange(0,dim);
-        Mat reducedT;
-        transpose(reduced, reducedT);
-        cout << reduced.rows << ".."<<  reduced.cols << endl;
-		cout << dataMatrix.rows << ".."<<  dataMatrix.cols << endl;
-        return dataMatrix * reducedT;
+        return dataMatrix * U.colRange(0,dim);
 }
 
 
@@ -123,15 +117,21 @@ map<double, int> KNN(Mat &dataMatrix, int index, int K){
 	int nElem = dataMatrix.rows;
 	map<double, int> distanceMap;
 	Mat x = dataMatrix.row(index);
-	for(int i = 0; i < nElem;i++){
-		Mat x_i = dataMatrix.row(i);
-		Mat diff = x-x_i;
+	for(int i = 0; i < nElem; i++)
+	{
+		//get iths datapoint
+		Mat x_i 	= dataMatrix.row(i);
+		//compute difference to given index
+		Mat diff 	= x - x_i;
+		//compute the L2 norm result in distance
 		Mat diff_t;
 		transpose (diff, diff_t);
 		Mat scalar = diff * diff_t;
 		double distance = sqrt(scalar.at<double>(0,0));
+		//add index and distance to the map
 		distanceMap.insert(pair<double, int>(distance,i));
 	}
+	//take the K nearest distances
 	map<double, int> ret;
 	int k = 0;
 	for (auto iter = distanceMap.begin(); k < K; k++, iter++){
@@ -144,19 +144,17 @@ map<double, int> KNN(Mat &dataMatrix, int index, int K){
 Mat floydWarshall (Mat &distanceMap){
 	int nElem = distanceMap.rows;
 
-	//for(int iter = 0; iter < 5 ; iter++){
-		for (int k = 0; k < nElem; k++){
-			for (int i = 0; i < nElem; i++){
-				for (int j = 0; j < nElem; j++){
-					double shortCut = distanceMap.at<double>(i,k) + distanceMap.at<double>(k,j);
-					if (shortCut < distanceMap.at<double>(i,j)){
-						distanceMap.at<double>(i,j) = shortCut;
-						distanceMap.at<double>(j,i) = shortCut;
-					}
+	for (int k = 0; k < nElem; k++){
+		for (int i = 0; i < nElem; i++){
+			for (int j = 0; j < nElem; j++){
+				double shortCut = distanceMap.at<double>(i,k) + distanceMap.at<double>(k,j);
+				if (shortCut < distanceMap.at<double>(i,j)){
+					distanceMap.at<double>(i,j) = shortCut;
+					distanceMap.at<double>(j,i) = shortCut;
 				}
 			}
 		}
-	//}
+	}
     return distanceMap;
 }
 
@@ -181,20 +179,14 @@ Mat reduceIsomap(Mat &dataMatrix, unsigned int dim)
 		}
 	}
 
-
 	distanceMap = floydWarshall(distanceMap);
 	Mat D = distanceMap.mul(distanceMap);
 	Mat C = Mat::eye(nElem,nElem,CV_64F);
-	C -= (Mat::ones(nElem,nElem,CV_64F) * 1.0/nElem);
-
+	C -= (Mat::ones(nElem,nElem,CV_64F) * 1.0/(double)nElem);
+	cout << C << endl;
 	Mat SVDInput= -0.5 * C * D * C; //X^T * X
     Mat U, S, vT;
     SVD::compute(SVDInput, S, U, vT);
-
-    //Mat reduced = vT.rowRange(0,dim);
-	//Mat reducedT;
-	//transpose(reduced, reducedT);
-
 	return U.colRange(0,dim);
 }
 
