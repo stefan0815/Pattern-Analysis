@@ -47,11 +47,11 @@ int main(int argc, char** argv)
 	// PCA
 
 	Mat dataPCA = reducePCA(dataMatrix,2);
-        double scale = findMaxL2(dataPCA);
-        //cout << dataPCA << endl;
-        dataPCA = dataPCA / (2*scale);
-        //cout << dataPCA << endl;
-        Draw2DManifold(dataPCA,"PCA",nSamplesI,nSamplesJ);
+	double scale = findMaxL2(dataPCA);
+	//cout << dataPCA << endl;
+	dataPCA = dataPCA / (2*scale);
+	//cout << dataPCA << endl;
+	Draw2DManifold(dataPCA,"PCA",nSamplesI,nSamplesJ);
 
 	// Isomap
 	Mat dataIsomap = reduceIsomap(dataMatrix,2);
@@ -66,20 +66,20 @@ int main(int argc, char** argv)
 Mat reducePCA(Mat &dataMatrix, unsigned int dim)
 {
 
-        Mat meanVec;
-        reduce (dataMatrix,meanVec,0,CV_REDUCE_AVG);
-        // 1. Compute Covariance Matrix of transformed mean vectors
-        Mat Cov = ComputeCovarianc(dataMatrix, meanVec);
-        // 2. Compute the 2 eigenvectors of the covariance matrix belong into the largest eigenvalues.
-        Mat U, S, vT;
-        SVD::compute(Cov, S, U, vT);
-        cout << U.rows << ".."<<  U.cols << endl;
-        Mat reduced = U.rowRange(0,dim);
-        Mat reducedT;
-        transpose(reduced, reducedT);
-        cout << reduced.rows << ".."<<  reduced.cols << endl;
-		cout << dataMatrix.rows << ".."<<  dataMatrix.cols << endl;
-        return dataMatrix * reducedT;
+	Mat meanVec;
+	reduce (dataMatrix,meanVec,0,CV_REDUCE_AVG);
+	// 1. Compute Covariance Matrix of transformed mean vectors
+	Mat Cov = ComputeCovarianc(dataMatrix, meanVec);
+	// 2. Compute the 2 eigenvectors of the covariance matrix belong into the largest eigenvalues.
+	Mat U, S, vT;
+	SVD::compute(Cov, S, U, vT);
+	cout << U.rows << ".."<<  U.cols << endl;
+	Mat reduced = U.rowRange(0,dim);
+	Mat reducedT;
+	transpose(reduced, reducedT);
+	cout << reduced.rows << ".."<<  reduced.cols << endl;
+	cout << dataMatrix.rows << ".."<<  dataMatrix.cols << endl;
+	return dataMatrix * reducedT;
 }
 
 
@@ -143,20 +143,17 @@ map<double, int> KNN(Mat &dataMatrix, int index, int K){
 
 Mat floydWarshall (Mat &distanceMap){
 	int nElem = distanceMap.rows;
-
-	//for(int iter = 0; iter < 5 ; iter++){
-		for (int k = 0; k < nElem; k++){
-			for (int i = 0; i < nElem; i++){
-				for (int j = 0; j < nElem; j++){
-					double shortCut = distanceMap.at<double>(i,k) + distanceMap.at<double>(k,j);
-					if (shortCut < distanceMap.at<double>(i,j)){
-						distanceMap.at<double>(i,j) = shortCut;
-						distanceMap.at<double>(j,i) = shortCut;
-					}
+	for (int k = 0; k < nElem; k++){
+		for (int i = 0; i < nElem; i++){
+			for (int j = 0; j < nElem; j++){
+				double shortCut = distanceMap.at<double>(i,k) + distanceMap.at<double>(k,j);
+				if (shortCut < distanceMap.at<double>(i,j)){
+					distanceMap.at<double>(i,j) = shortCut;
+					distanceMap.at<double>(j,i) = shortCut;
 				}
 			}
 		}
-	//}
+	}
     return distanceMap;
 }
 
