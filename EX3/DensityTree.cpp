@@ -8,28 +8,97 @@
 
 #include "DensityTree.h"
 
+Mat ComputeCovarianc(Mat &matrix)
+{
+	Mat mean;
+	reduce(matrix, mean, 0, CV_REDUCE_AVG);
+	const int nElem = matrix.rows;
+	const int dim = matrix.cols;
+	Mat sum = Mat::zeros(dim, dim, CV_64F);
+	for (int i = 0; i < nElem; i++){
+		Mat x_i = Mat(matrix.row(i) - mean);
+		Mat x_i_t;
+		transpose(x_i, x_i_t);
+		Mat cov_i = x_i_t * x_i;
+		sum = sum + cov_i;
+	}
+	return sum / nElem;
+}
 
-Decision::Decision(double min_x, double max_x, double min_y, double max_y, Mat X){
+Mat ComputeCovarianc(Mat &matrix,Mat &mean)
+{
+	const int nElem = matrix.rows;
+	const int dim = matrix.cols;
+	Mat sum = Mat::zeros(dim, dim, CV_64F);
+	for (int i = 0; i < nElem; i++){
+		Mat x_i = Mat(matrix.row(i) - mean);
+		Mat x_i_t;
+		transpose(x_i, x_i_t);
+		Mat cov_i = x_i_t * x_i;
+		sum = sum + cov_i;
+	}
+	return sum / nElem;
+}
+
+
+
+Decision::Decision(double min_x, double max_x, double min_y, double max_y, double n_x, double n_y, Mat &inputSet){
 	p_x = min_x + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_x-min_x)));
 	p_y = min_y + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_y-min_y)));
-	double length = 0;
-	do{
-		n_x = min_x + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_x-min_x)));
-		n_y = min_y + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_y-min_y)));
-		n_x = n_x - p_x;
-		n_y = n_y - p_y;
-		length = sqrt(n_x*n_x + n_y*n_y);
-	}
-	while (length == 0);
-	n_x /= length;
-	n_y /= length;
-	calcInformation(X);
+	//double length = 0;
+	//do{
+	//	n_x = min_x + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_x-min_x)));
+	//	n_y = min_y + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_y-min_y)));
+	//	n_x = n_x - p_x;
+	//	n_y = n_y - p_y;
+	//	length = sqrt(n_x*n_x + n_y*n_y);
+	//}
+	//while (length == 0);
+	//n_x /= length;
+	//n_y /= length;
+	this->n_x = n_x;
+	this->n_y = n_y;
+	this->set = inputSet;
+	CalculateSubsets();
+	CalcInformation();
 }
-bool Decision::decide(double x, double y){
+bool Decision::Decide(double x, double y){
 	return (n_x * (x - p_x) + n_y * (y - p_y)) >= 0;
 }
-void Decision::calcInformation(Mat X){
-	information = 0;//finish me
+
+void Decision::CalculateSubsets(){
+	leftSubset = Mat();
+	rightSubset = Mat();
+	for (int i = 0; i < set.rows; i++){
+		double x = set.at<double>(i, 0);
+		double y = set.at<double>(i, 1);
+		if (Decide(x, y)){
+			leftSubset.push_back(set.row(i));
+		}
+		else{
+			rightSubset.push_back(set.row(i));
+		}
+	}
+	//double leftProb = (double)rightSubset.rows / (double)set.rows;
+	//double rightProb = (double)rightSubset.rows / (double)set.rows;
+	//leftEntropy = -leftProb * log(leftProb);
+	//rightEntropy = -rightProb * log(rightProb);
+}
+
+void Decision::CalcInformation(){
+	double leftRatio = (double)leftSubset.rows / (double)set.rows;
+	double rightRatio = (double)rightSubset.rows / (double)set.rows;
+	Mat cov = ComputeCovarianc(set);
+	Mat lCov = ComputeCovarianc(leftSubset);
+	Mat rCov = ComputeCovarianc(rightSubset);
+	double lDet = determinant(lCov);
+	double rDet = determinant(rCov);
+	if (lDet > 0.00001f && rDet > 0.00001f){
+		information = log(determinant(cov)) - leftRatio*log(lDet) - rightRatio*log(rDet);
+	}
+	else{
+		information = 0;
+	}
 }
 
 DensityTree::DensityTree(unsigned int D, unsigned int n_thresholds, Mat X) 
@@ -69,25 +138,32 @@ DensityTree::DensityTree(unsigned int D, unsigned int n_thresholds, Mat X)
 
 void DensityTree::train()
 {    
-
+	nodes[0].inputSet = X;
+	//nodes[0].inputEntropy = 0;
 	for(int k = 0; k < iN;k++){
 		nodes[k].childrenL = &nodes[(k*2+1)];
+		//nodes[(k * 2 + 1)].isLeftChild = true;
 		nodes[(k*2+1)].parent = &nodes[k];
 		nodes[k].childrenR = &nodes[(k*2+2)];
 		nodes[(k*2+2)].parent = &nodes[k];
-		for(int i = 0; i <n_thresholds;i++){
-
-			Decision dec = Decision(min_x,max_x,min_y,max_y,X);
-			if(nodes[k].decision.information < dec.information){
-				nodes[k].decision = dec;
+		//if (k != 0){
+		//	nodes[k].inputSet = nodes[k].isLeftChild ? nodes[k].parent->decision.leftSubset : nodes[k].parent->decision.rightSubset;
+		//	//nodes[k].inputEntropy = nodes[k].isLeftChild ? nodes[k].parent->decision.leftEntropy : nodes[k].parent->decision.rightEntropy;
+		//}
+		for (int dir = 0; dir < 2; dir++){
+			for (int i = 0; i < n_thresholds; i++){
+				double n_x = dir;
+				double n_y = 1 - dir;
+				Decision dec = Decision(min_x, max_x, min_y, max_y, n_x, n_y, nodes[k].inputSet);
+				if (nodes[k].decision.information < dec.information){
+					nodes[k].decision = dec;
+				}
 			}
 		}
+		nodes[k].childrenL->inputSet = nodes[k].decision.leftSubset;
+		nodes[k].childrenR->inputSet = nodes[k].decision.rightSubset;
 	}
-	cout << D << endl;
-	cout << iN << endl;
-	cout << N << endl;
 	cout << X.rows << endl;
-    cout << "it is not implemented yet" << endl;//Temporal
 }
 Mat DensityTree::densityXY()
 {
@@ -112,6 +188,16 @@ Mat DensityTree::densityXY()
 
     *
     */
+	for (int k = iN; k < N; k++){//iterate over each leaf;
+		Mat subset = nodes[k].inputSet;
+		Mat mean;
+		reduce(subset, mean, 0, CV_REDUCE_AVG);
+		Mat cov = ComputeCovarianc(subset, mean); 
+		for (int i = 0; i < subset.rows; i++){
+
+		}
+		//EM::predict()
+	}
     return X;//Temporal, only to not generate an error when compiling
 }
 

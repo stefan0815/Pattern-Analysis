@@ -1,6 +1,7 @@
 #include "opencv2/highgui.hpp"
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
+#include "opencv2/ml.hpp"
 #include <vector>
 #include <iostream>
 #include <fstream>
@@ -21,10 +22,15 @@ public:
 	double p_x,p_y;
 	double n_x,n_y;
 	double information;
+	Mat set;
+	Mat leftSubset;
+	Mat rightSubset;
+
 	Decision(){};
-	Decision(double min_x, double max_x, double min_y, double max_y, Mat X);
-	bool decide(double x, double y);
-	void calcInformation(Mat X);
+	Decision(double min_x, double max_x, double min_y, double max_y,double n_x, double n_y, Mat &inputSet);
+	bool Decide(double x, double y);
+	void CalculateSubsets();
+	void CalcInformation();
 
 
 };
@@ -36,10 +42,13 @@ public:
 	MyNode* childrenL;
 	MyNode* childrenR;
 	bool isLeaf;
+	//bool isLeftChild;
 	Decision decision;
+	Mat inputSet;
 	MyNode(){
 		isRoot = false;
 		isLeaf = false;
+		//isLeftChild = false;
 	}
 };
 
