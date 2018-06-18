@@ -8,7 +8,7 @@
 
 #include "DensityTree.h"
 
-Mat ComputeCovarianc(Mat &matrix)
+Mat ComputeCovariance(Mat &matrix)
 {
 	Mat mean;
 	reduce(matrix, mean, 0, CV_REDUCE_AVG);
@@ -25,7 +25,7 @@ Mat ComputeCovarianc(Mat &matrix)
 	return sum / nElem;
 }
 
-Mat ComputeCovarianc(Mat &matrix,Mat &mean)
+Mat ComputeCovariance(Mat &matrix,Mat &mean)
 {
 	const int nElem = matrix.rows;
 	const int dim = matrix.cols;
@@ -42,7 +42,7 @@ Mat ComputeCovarianc(Mat &matrix,Mat &mean)
 
 
 
-Decision::Decision(double min_x, double max_x, double min_y, double max_y, double n_x, double n_y, Mat &inputSet){
+Decision::Decision(double min_x, double max_x, double min_y, double max_y, double n_x, double n_y, Mat &inputSet, Mat &inputCov){
 	p_x = min_x + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_x-min_x)));
 	p_y = min_y + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_y-min_y)));
 	//double length = 0;
@@ -59,6 +59,7 @@ Decision::Decision(double min_x, double max_x, double min_y, double max_y, doubl
 	this->n_x = n_x;
 	this->n_y = n_y;
 	this->set = inputSet;
+	this->cov = inputCov;
 	CalculateSubsets();
 	CalcInformation();
 }
@@ -88,11 +89,14 @@ void Decision::CalculateSubsets(){
 void Decision::CalcInformation(){
 	double leftRatio = (double)leftSubset.rows / (double)set.rows;
 	double rightRatio = (double)rightSubset.rows / (double)set.rows;
-	Mat cov = ComputeCovarianc(set);
-	Mat lCov = ComputeCovarianc(leftSubset);
-	Mat rCov = ComputeCovarianc(rightSubset);
-	double lDet = determinant(lCov);
-	double rDet = determinant(rCov);
+	leftCov = ComputeCovariance(leftSubset);
+	rightCov = ComputeCovariance(rightSubset);
+	if(leftSubset.rows == 0 || rightSubset.rows == 0){
+		information = 0;
+		return;
+	}
+	double lDet = determinant(leftCov);
+	double rDet = determinant(rightCov);
 	if (lDet > 0.00001f && rDet > 0.00001f){
 		information = log(determinant(cov)) - leftRatio*log(lDet) - rightRatio*log(rDet);
 	}
@@ -122,6 +126,10 @@ DensityTree::DensityTree(unsigned int D, unsigned int n_thresholds, Mat X)
     this-> N = pow(2,D)-1;
     this-> iN = N - pow(2,(D-1));
     this-> nodes = vector<MyNode>(N);
+    this-> nodes[0].inputSet = X;
+    this-> nodes[0].inputCov = ComputeCovariance(nodes[0].inputSet);
+    this-> cov = this-> nodes[0].inputCov;
+	reduce(X, mean, 0, CV_REDUCE_AVG);
     nodes[0].isRoot = true;
     for(int i =iN; i < N;i++){
     	nodes[i].isLeaf = true;
@@ -138,23 +146,19 @@ DensityTree::DensityTree(unsigned int D, unsigned int n_thresholds, Mat X)
 
 void DensityTree::train()
 {    
-	nodes[0].inputSet = X;
-	//nodes[0].inputEntropy = 0;
+
 	for(int k = 0; k < iN;k++){
 		nodes[k].childrenL = &nodes[(k*2+1)];
-		//nodes[(k * 2 + 1)].isLeftChild = true;
 		nodes[(k*2+1)].parent = &nodes[k];
+
 		nodes[k].childrenR = &nodes[(k*2+2)];
 		nodes[(k*2+2)].parent = &nodes[k];
-		//if (k != 0){
-		//	nodes[k].inputSet = nodes[k].isLeftChild ? nodes[k].parent->decision.leftSubset : nodes[k].parent->decision.rightSubset;
-		//	//nodes[k].inputEntropy = nodes[k].isLeftChild ? nodes[k].parent->decision.leftEntropy : nodes[k].parent->decision.rightEntropy;
-		//}
+
 		for (int dir = 0; dir < 2; dir++){
 			for (int i = 0; i < n_thresholds; i++){
 				double n_x = dir;
 				double n_y = 1 - dir;
-				Decision dec = Decision(min_x, max_x, min_y, max_y, n_x, n_y, nodes[k].inputSet);
+				Decision dec = Decision(min_x, max_x, min_y, max_y, n_x, n_y, nodes[k].inputSet, nodes[k].inputCov);
 				if (nodes[k].decision.information < dec.information){
 					nodes[k].decision = dec;
 				}
@@ -162,8 +166,10 @@ void DensityTree::train()
 		}
 		nodes[k].childrenL->inputSet = nodes[k].decision.leftSubset;
 		nodes[k].childrenR->inputSet = nodes[k].decision.rightSubset;
+		nodes[k].childrenL->inputCov = nodes[k].decision.leftCov;
+		nodes[k].childrenR->inputCov = nodes[k].decision.rightCov;
 	}
-	cout << X.rows << endl;
+	cout << nodes[0].inputSet.rows <<","<< nodes[0].decision.set.rows << ":::" << nodes[0].decision.leftSubset.rows << "|||" << nodes[0].decision.rightSubset.rows << endl;
 }
 Mat DensityTree::densityXY()
 {
@@ -188,17 +194,63 @@ Mat DensityTree::densityXY()
 
     *
     */
+	Mat M = Mat::zeros(X.rows,X.cols,CV_64F);
+	int n_cluster = N-iN;
+	Mat weights = Mat::ones(1,n_cluster,CV_64F);
+	Ptr<EM> em_model = EM::create();
+	em_model->setClustersNumber(n_cluster);
+	//Mat covs[n_cluster];
+	Mat means = Mat::zeros(n_cluster,X.cols,CV_64F);
+	for (int k = iN; k < N; k++){
+		//covs[k-iN] = nodes[k].inputCov;
+		Mat meank;
+		reduce(nodes[k].inputCov, meank, 0, CV_REDUCE_AVG);
+		cout << meank << endl;
+		meank.copyTo(means.row(k-iN));
+	}
+
+	Mat loglikely;
+	Mat labels;
+	Mat probs;
+	cout << means << endl;
+	if(em_model->trainE(X,means,noArray(),weights,loglikely,labels,probs)){
+		cout << "successfully trained"<<endl;
+	}
+
+	/* for each sample in X:
+	 * create new sample with:
+	 * x.at<double>(0,0) = subset.at<double>(i,0);
+	 * x.at<double>(0,1) = subset.at<double>(j,1);
+	 * get probability of that point to be in the Gauss distribution of the subset
+	 * add these probabilities for all j in subset;
+	 * -> Px1[i] = sum over j
+	 * Px2: fix second component and iterate over first component
+	 * x.at<double>(0,1) = subset.at<double>(i,1);
+	 * x.at<double>(0,0) = subset.at<double>(j,0);
+	 */
+
 	for (int k = iN; k < N; k++){//iterate over each leaf;
 		Mat subset = nodes[k].inputSet;
-		Mat mean;
-		reduce(subset, mean, 0, CV_REDUCE_AVG);
-		Mat cov = ComputeCovarianc(subset, mean); 
 		for (int i = 0; i < subset.rows; i++){
+			Mat x_1 = Mat::zeros(1,2,CV_64F);
+			x_1.at<double>(0,0) = subset.at<double>(i,0);
 
+			Mat x_2 = Mat::zeros(1,2,CV_64F);
+			x_2.at<double>(0,1) = subset.at<double>(i,1);
+
+			for(int j = 0; j < subset.rows; j++){
+				x_1.at<double>(0,1) = subset.at<double>(j,1);
+				x_2.at<double>(0,0) = subset.at<double>(j,0);
+				Mat probs_1 = Mat::zeros(1,n_cluster,CV_64F);
+				Mat probs_2 = Mat::zeros(1,n_cluster,CV_64F);
+				em_model->predict(x_1,probs_1);
+				em_model->predict(x_2,probs_2);
+				M.at<double>(0,i) += probs_1.at<double>(0,N-iN);
+				M.at<double>(1,i) += probs_2.at<double>(0,N-iN);
+			}
 		}
-		//EM::predict()
 	}
-    return X;//Temporal, only to not generate an error when compiling
+    return M;//Temporal, only to not generate an error when compiling
 }
 
 

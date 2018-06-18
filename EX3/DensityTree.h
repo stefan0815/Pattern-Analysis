@@ -13,6 +13,7 @@
 
 using namespace cv;
 using namespace std;
+using namespace ml;
 
 #ifndef DENSITYTREE_H
 #define DENSITYTREE_H
@@ -23,11 +24,14 @@ public:
 	double n_x,n_y;
 	double information;
 	Mat set;
+	Mat cov;
 	Mat leftSubset;
+	Mat leftCov;
 	Mat rightSubset;
+	Mat rightCov;
 
-	Decision(){};
-	Decision(double min_x, double max_x, double min_y, double max_y,double n_x, double n_y, Mat &inputSet);
+	Decision(){information = -1;};
+	Decision(double min_x, double max_x, double min_y, double max_y,double n_x, double n_y, Mat &inputSet, Mat &inputCov);
 	bool Decide(double x, double y);
 	void CalculateSubsets();
 	void CalcInformation();
@@ -45,6 +49,7 @@ public:
 	//bool isLeftChild;
 	Decision decision;
 	Mat inputSet;
+	Mat inputCov;
 	MyNode(){
 		isRoot = false;
 		isLeaf = false;
@@ -68,6 +73,8 @@ private:
     //vector<int >asd ;
     std::vector<MyNode> nodes;
     Mat X;
+    Mat cov;
+    Mat mean;
     double min_x,max_x,min_y,max_y;
 };
 
