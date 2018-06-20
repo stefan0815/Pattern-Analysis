@@ -8,6 +8,30 @@
 
 #include "DensityTree.h"
 
+void plotData2(Mat dataMatrix, char const * name)
+{
+    Mat origImage = Mat(1000,1000,CV_8UC3);
+    origImage.setTo(0.0);
+    double minValX,maxValX;
+    minMaxIdx( dataMatrix.col(0), &minValX, &maxValX,NULL,NULL);
+    double minValY,maxValY;
+    minMaxIdx( dataMatrix.col(1), &minValY, &maxValY,NULL,NULL);
+    double v;
+    double nmin=100,nmax=900;
+    for (int i = 0; i < 1000; i++)
+    {
+        Point p1;
+        v= dataMatrix.at<double>(i,0);
+        p1.x = ((v-minValX)/(maxValX-minValX))*(nmax-nmin)+nmin;
+        v= dataMatrix.at<double>(i,1);
+        p1.y = ((v-minValY)/(maxValY-minValY))*(nmax-nmin)+nmin;
+        circle(origImage,p1,3,Scalar( 255, 255, 255 ));
+    }
+
+    namedWindow( name, WINDOW_AUTOSIZE );
+    imshow( name, origImage );
+}
+
 Mat ComputeCovariance(Mat &matrix)
 {
 	Mat mean;
@@ -42,24 +66,25 @@ Mat ComputeCovariance(Mat &matrix,Mat &mean)
 
 
 
-Decision::Decision(double min_x, double max_x, double min_y, double max_y, double n_x, double n_y, Mat &inputSet, Mat &inputCov){
+Decision::Decision(double min_x, double max_x, double min_y, double max_y, double n_x, double n_y, Mat &inputSet, Mat &inputCov, std::vector<int>inputIdx){
 	p_x = min_x + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_x-min_x)));
 	p_y = min_y + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_y-min_y)));
 	//double length = 0;
 	//do{
-	//	n_x = min_x + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_x-min_x)));
-	//	n_y = min_y + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_y-min_y)));
-	//	n_x = n_x - p_x;
-	//	n_y = n_y - p_y;
-	//	length = sqrt(n_x*n_x + n_y*n_y);
+	//	this->n_x = min_x + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_x-min_x)));
+	//	this->n_y = min_y + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(max_y-min_y)));
+	//	this->n_x = this->n_x - p_x;
+	//	this->n_y = this->n_y - p_y;
+	//	length = sqrt(this->n_x*this->n_x + this->n_y*this->n_y);
 	//}
 	//while (length == 0);
-	//n_x /= length;
-	//n_y /= length;
+	//this->n_x /= length;
+	//this->n_y /= length;
 	this->n_x = n_x;
 	this->n_y = n_y;
 	this->set = inputSet;
 	this->cov = inputCov;
+	this->idx = inputIdx;
 	CalculateSubsets();
 	CalcInformation();
 }
@@ -75,15 +100,13 @@ void Decision::CalculateSubsets(){
 		double y = set.at<double>(i, 1);
 		if (Decide(x, y)){
 			leftSubset.push_back(set.row(i));
+			leftIdx.push_back(idx[i]);
 		}
 		else{
 			rightSubset.push_back(set.row(i));
+			rightIdx.push_back(idx[i]);
 		}
 	}
-	//double leftProb = (double)rightSubset.rows / (double)set.rows;
-	//double rightProb = (double)rightSubset.rows / (double)set.rows;
-	//leftEntropy = -leftProb * log(leftProb);
-	//rightEntropy = -rightProb * log(rightProb);
 }
 
 void Decision::CalcInformation(){
@@ -128,6 +151,8 @@ DensityTree::DensityTree(unsigned int D, unsigned int n_thresholds, Mat X)
     this-> nodes = vector<MyNode>(N);
     this-> nodes[0].inputSet = X;
     this-> nodes[0].inputCov = ComputeCovariance(nodes[0].inputSet);
+    this-> nodes[0].inputIdx.resize(X.rows);
+    std::iota (nodes[0].inputIdx.begin(), nodes[0].inputIdx.end(), 0);
     this-> cov = this-> nodes[0].inputCov;
 	reduce(X, mean, 0, CV_REDUCE_AVG);
     nodes[0].isRoot = true;
@@ -146,7 +171,7 @@ DensityTree::DensityTree(unsigned int D, unsigned int n_thresholds, Mat X)
 
 void DensityTree::train()
 {    
-
+	cout << "start training of tree" << endl;
 	for(int k = 0; k < iN;k++){
 		nodes[k].childrenL = &nodes[(k*2+1)];
 		nodes[(k*2+1)].parent = &nodes[k];
@@ -158,7 +183,7 @@ void DensityTree::train()
 			for (int i = 0; i < n_thresholds; i++){
 				double n_x = dir;
 				double n_y = 1 - dir;
-				Decision dec = Decision(min_x, max_x, min_y, max_y, n_x, n_y, nodes[k].inputSet, nodes[k].inputCov);
+				Decision dec = Decision(min_x, max_x, min_y, max_y, n_x, n_y, nodes[k].inputSet, nodes[k].inputCov, nodes[k].inputIdx);
 				if (nodes[k].decision.information < dec.information){
 					nodes[k].decision = dec;
 				}
@@ -168,89 +193,59 @@ void DensityTree::train()
 		nodes[k].childrenR->inputSet = nodes[k].decision.rightSubset;
 		nodes[k].childrenL->inputCov = nodes[k].decision.leftCov;
 		nodes[k].childrenR->inputCov = nodes[k].decision.rightCov;
+		nodes[k].childrenL->inputIdx = nodes[k].decision.leftIdx;
+		nodes[k].childrenR->inputIdx = nodes[k].decision.rightIdx;
 	}
-	cout << nodes[0].inputSet.rows <<","<< nodes[0].decision.set.rows << ":::" << nodes[0].decision.leftSubset.rows << "|||" << nodes[0].decision.rightSubset.rows << endl;
+	cout << "end training of tree" << endl;
 }
 Mat DensityTree::densityXY()
 {
 
-    /*
-    *
-    if X=
-    [x1_1,x2_1;
-     x1_2,x2_2;
-     ....
-     x1_N,x2_N]
-
-    then you return
-    M=
-    [Px1,Px2]
-
-    Px1 and Px2 are column vectors of size N (X and M have the same size)
-    They are the marginals distributions.
-    Check https://en.wikipedia.org/wiki/Marginal_distribution
-    Feel free to delete this comments
-    Tip: you can use cv::ml::EM::predict2 to estimate the probs of a sample.
-
-    *
-    */
+	cout << "Start densityXY" << endl;
 	Mat M = Mat::zeros(X.rows,X.cols,CV_64F);
-	int n_cluster = N-iN;
-	Mat weights = Mat::ones(1,n_cluster,CV_64F);
-	Ptr<EM> em_model = EM::create();
-	em_model->setClustersNumber(n_cluster);
-	//Mat covs[n_cluster];
+	int n_cluster = 1;
 	Mat means = Mat::zeros(n_cluster,X.cols,CV_64F);
 	for (int k = iN; k < N; k++){
-		//covs[k-iN] = nodes[k].inputCov;
-		Mat meank;
-		reduce(nodes[k].inputCov, meank, 0, CV_REDUCE_AVG);
-		cout << meank << endl;
-		meank.copyTo(means.row(k-iN));
-	}
+		for(int i = 0; i < nodes[k].inputIdx.size();i++){
+			int idx = nodes[k].inputIdx[i];
+			Mat point = nodes[k].inputSet.row(i);
 
-	Mat loglikely;
-	Mat labels;
-	Mat probs;
-	cout << means << endl;
-	if(em_model->trainE(X,means,noArray(),weights,loglikely,labels,probs)){
-		cout << "successfully trained"<<endl;
-	}
+			if(!nodes[k].hasPDF){
 
-	/* for each sample in X:
-	 * create new sample with:
-	 * x.at<double>(0,0) = subset.at<double>(i,0);
-	 * x.at<double>(0,1) = subset.at<double>(j,1);
-	 * get probability of that point to be in the Gauss distribution of the subset
-	 * add these probabilities for all j in subset;
-	 * -> Px1[i] = sum over j
-	 * Px2: fix second component and iterate over first component
-	 * x.at<double>(0,1) = subset.at<double>(i,1);
-	 * x.at<double>(0,0) = subset.at<double>(j,0);
-	 */
+				Mat meank;
+				reduce(nodes[k].inputSet, meank, 0, CV_REDUCE_AVG);
+				std::vector<Mat> covArray;
+				covArray.push_back(nodes[k].inputCov);
+				nodes[k].pdf = EM::create();
+				nodes[k].pdf->setClustersNumber(n_cluster);
+				if(nodes[k].pdf->trainE(nodes[k].inputSet,meank,covArray, noArray(),noArray(),noArray(),noArray())){
+					cout << "Em successfully trained for leaf #" << k - iN + 1<<endl;
+					nodes[k].hasPDF = true;
+				}else
+					cout << "training failed" << endl;
+			}
 
-	for (int k = iN; k < N; k++){//iterate over each leaf;
-		Mat subset = nodes[k].inputSet;
-		for (int i = 0; i < subset.rows; i++){
-			Mat x_1 = Mat::zeros(1,2,CV_64F);
-			x_1.at<double>(0,0) = subset.at<double>(i,0);
+			for(int j = 0; j < nodes[k].inputIdx.size(); j++)
+			{
+				// X
+				Mat maginalHelperX 			= Mat::zeros( 1, 2, CV_64F );
+				maginalHelperX.at<double>(0) = point.at<double>(0);
+				maginalHelperX.at<double>(1) = nodes[k].inputSet.row(j).at<double>(1);
 
-			Mat x_2 = Mat::zeros(1,2,CV_64F);
-			x_2.at<double>(0,1) = subset.at<double>(i,1);
+				// Y
+				Mat maginalHelperY 			= Mat::zeros( 1, 2, CV_64F );
+				maginalHelperY.at<double>(0) = nodes[k].inputSet.row(j).at<double>(0);
+				maginalHelperY.at<double>(1) = point.at<double>(1);
 
-			for(int j = 0; j < subset.rows; j++){
-				x_1.at<double>(0,1) = subset.at<double>(j,1);
-				x_2.at<double>(0,0) = subset.at<double>(j,0);
-				Mat probs_1 = Mat::zeros(1,n_cluster,CV_64F);
-				Mat probs_2 = Mat::zeros(1,n_cluster,CV_64F);
-				em_model->predict(x_1,probs_1);
-				em_model->predict(x_2,probs_2);
-				M.at<double>(0,i) += probs_1.at<double>(0,N-iN);
-				M.at<double>(1,i) += probs_2.at<double>(0,N-iN);
+				Mat a;
+				M.row(idx).at<double>(0) += (float) -exp(nodes[k].pdf->predict2(maginalHelperX, a).val[0]);
+				M.row(idx).at<double>(1) += (float) -exp(nodes[k].pdf->predict2(maginalHelperY, a).val[0]);
 			}
 		}
 	}
-    return M;//Temporal, only to not generate an error when compiling
+	cout << "End densityXY" <<endl;
+	cout << endl;
+	return M;
 }
 
 

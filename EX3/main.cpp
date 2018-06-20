@@ -25,8 +25,8 @@ int main(int argc, char** argv)
     vector<Mat> densityXY;
     
     densityXY.push_back(densityForest(n_levels,n_thresholds,1,dataMatrix));
-    //densityXY.push_back(densityForest(n_levels,n_thresholds,5,dataMatrix));
-    //densityXY.push_back(densityForest(n_levels,n_thresholds,10,dataMatrix));
+    densityXY.push_back(densityForest(n_levels,n_thresholds,10,dataMatrix));
+    densityXY.push_back(densityForest(n_levels,n_thresholds,20,dataMatrix));
     
     plotDensities(dataMatrix,densityXY,0,"Densities X");
     plotDensities(dataMatrix,densityXY,1,"Densities Y");
@@ -59,6 +59,7 @@ Mat densityForest(unsigned int D, unsigned int numberOfThresholds,unsigned int n
         DensityTree T(D,numberOfThresholds,X);
         T.train();
         density+=T.densityXY();
+        cout << i + 1 << "/" << numberOfTrees << " trees processed" << endl;
     }
     return density/(double)numberOfTrees;
 }

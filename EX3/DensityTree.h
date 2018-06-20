@@ -9,6 +9,12 @@
 #include <math.h>
 #include <stdlib.h>     /* srand, rand */
 #include <time.h>       /* time */
+#include <algorithm>
+#include <iostream>
+#include <list>
+#include <numeric>
+#include <random>
+#include <vector>
 # define PI 3.14159265358979323846
 
 using namespace cv;
@@ -24,14 +30,17 @@ public:
 	double n_x,n_y;
 	double information;
 	Mat set;
+	std::vector<int> idx;
 	Mat cov;
 	Mat leftSubset;
 	Mat leftCov;
+	std::vector<int> leftIdx;
+	std::vector<int> rightIdx;
 	Mat rightSubset;
 	Mat rightCov;
 
 	Decision(){information = -1;};
-	Decision(double min_x, double max_x, double min_y, double max_y,double n_x, double n_y, Mat &inputSet, Mat &inputCov);
+	Decision(double min_x, double max_x, double min_y, double max_y,double n_x, double n_y, Mat &inputSet, Mat &inputCov, std::vector<int>inputIdx);
 	bool Decide(double x, double y);
 	void CalculateSubsets();
 	void CalcInformation();
@@ -50,9 +59,13 @@ public:
 	Decision decision;
 	Mat inputSet;
 	Mat inputCov;
+	std::vector<int> inputIdx;
+	bool hasPDF;
+	Ptr<EM> pdf;
 	MyNode(){
 		isRoot = false;
 		isLeaf = false;
+		hasPDF = false;
 		//isLeftChild = false;
 	}
 };
