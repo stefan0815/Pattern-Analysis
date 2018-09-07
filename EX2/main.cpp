@@ -143,10 +143,6 @@ map<double, int> KNN(Mat &dataMatrix, int index, int K){
 
 Mat floydWarshall (Mat &distanceMap){
 	int nElem = distanceMap.rows;
-<<<<<<< HEAD
-=======
-
->>>>>>> 88e409eabab03ff12b722a022c73dc96c9109402
 	for (int k = 0; k < nElem; k++){
 		for (int i = 0; i < nElem; i++){
 			for (int j = 0; j < nElem; j++){
